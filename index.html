@@ -100,6 +100,8 @@ th { color: var(--muted); font-weight: 600; }
 .src a { color: inherit; }
 /* 지도 위 요소 */
 .leaflet-container { font: inherit; }
+.tiles-gray { filter: grayscale(1) contrast(.68) brightness(1.14); }
+.tiles-dark { filter: invert(1) hue-rotate(180deg) grayscale(.85) brightness(.85) contrast(.9); }
 .leaflet-tooltip.btip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; }
 .leaflet-tooltip.btip::before { display: none; }
 .btip .t { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
@@ -129,10 +131,6 @@ th { color: var(--muted); font-weight: 600; }
       </div>
     </header>
 
-    <div id="keywarn" class="warn" hidden>
-      브이월드 배경지도 키가 없습니다. 로컬에서는 <code>node scripts/make_key_js.mjs</code>로 <code>vworld_key.js</code>를 만들고, 그 밖의 환경에서는 주소 끝에 <code>?key=인증키</code>를 붙여 여세요. 건물 지도는 배경 없이 표시됩니다.
-    </div>
-
     <section>
       <h2>행정동</h2>
       <div class="chips" id="dongs" role="group" aria-label="행정동 선택"></div>
@@ -155,7 +153,7 @@ th { color: var(--muted); font-weight: 600; }
     </details>
 
     <section>
-      <h2>브이월드 배경지도</h2>
+      <h2>배경지도</h2>
       <div class="base" id="base" role="group" aria-label="배경지도"></div>
     </section>
 
@@ -171,8 +169,6 @@ th { color: var(--muted); font-weight: 600; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="data/seongsu_data.js"></script>
-<!-- 로컬 전용 키 파일(커밋 안 함). 없으면 ?key= 로 받는다 -->
-<script src="vworld_key.js"></script>
 <script>
 (() => {
   const D = window.SEONGSU;
@@ -180,10 +176,6 @@ th { color: var(--muted); font-weight: 600; }
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const nf = (n) => n.toLocaleString('ko-KR');
   const fmtDay = (d) => (d && d.length === 8 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)}` : d || '—');
-
-  // ── 키: vworld_key.js → ?key= → 이전에 쓴 키(localStorage)
-  let key = window.VWORLD_KEY || new URLSearchParams(location.search).get('key');
-  try { if (key) localStorage.setItem('vworldKey', key); else key = localStorage.getItem('vworldKey'); } catch (e) {}
 
   const DONGS = ['성수1가1동', '성수1가2동', '성수2가1동', '성수2가3동'];
   const USE = { '01000': '단독주택', '02000': '공동주택', '03000': '제1종 근린생활시설', '04000': '제2종 근린생활시설', '05000': '문화 및 집회시설', '06000': '종교시설', '07000': '판매시설', '08000': '운수시설', '09000': '의료시설', '10000': '교육연구시설', '11000': '노유자시설', '12000': '수련시설', '13000': '운동시설', '14000': '업무시설', '15000': '숙박시설', '16000': '위락시설', '17000': '공장', '18000': '창고시설', '19000': '위험물 저장·처리시설', '20000': '자동차 관련 시설', '21000': '동물·식물 관련 시설', '22000': '자원순환 관련 시설', '23000': '교정시설', '24000': '국방·군사시설', '25000': '방송통신시설', '26000': '발전시설', '27000': '묘지 관련 시설', '28000': '관광 휴게시설', '29000': '장례시설' };
@@ -230,29 +222,28 @@ th { color: var(--muted); font-weight: 600; }
 
   // ── 지도
   const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 12, maxZoom: 19, zoomSnap: 0.25 });
+  // 배경지도: 모두 인증키가 필요 없는 공개 타일
+  // 회색·어두운 지도는 OSM 타일에 CSS 필터를 입힌 것
+  const OSM_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const OSM = '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> 기여자';
   const BASES = [
-    { id: 'white', label: '흰지도', ext: 'png' },
-    { id: 'Base', label: '기본', ext: 'png' },
-    { id: 'midnight', label: '야간', ext: 'png' },
-    { id: 'Satellite', label: '영상', ext: 'jpeg' },
+    { id: 'light', label: '회색', dark: false, url: OSM_URL, attribution: OSM, maxNativeZoom: 19, className: 'tiles-gray' },
+    { id: 'osm', label: '일반', dark: false, url: OSM_URL, attribution: OSM, maxNativeZoom: 19 },
+    { id: 'dark', label: '어두운', dark: true, url: OSM_URL, attribution: OSM, maxNativeZoom: 19, className: 'tiles-dark' },
+    { id: 'sat', label: '위성', dark: true, url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attribution: 'Tiles © Esri — Esri, Maxar, Earthstar Geographics', maxNativeZoom: 18 },
   ];
-  const attrib = '배경지도 © <a href="https://www.vworld.kr" target="_blank" rel="noopener">브이월드</a>';
-  let baseLayer = null, labelLayer = null, baseId = 'white';
-  const dark = () => baseId === 'midnight' || baseId === 'Satellite';
+  let baseLayer = null, labelLayer = null, baseId = 'light';
+  const dark = () => BASES.find((b) => b.id === baseId).dark;
   function setBase(id) {
     baseId = id;
     if (baseLayer) map.removeLayer(baseLayer);
     if (labelLayer) map.removeLayer(labelLayer);
     document.querySelectorAll('#base .chip').forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.id === id)));
-    if (key) {
-      const b = BASES.find((x) => x.id === id);
-      baseLayer = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${key}/${b.id}/{z}/{y}/{x}.${b.ext}`, { maxZoom: 19, attribution: attrib }).addTo(map);
-      baseLayer.bringToBack();
-      if (id === 'Satellite') labelLayer = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${key}/Hybrid/{z}/{y}/{x}.png`, { maxZoom: 19 }).addTo(map);
-    }
+    const b = BASES.find((x) => x.id === id);
+    baseLayer = L.tileLayer(b.url, { maxZoom: 19, maxNativeZoom: b.maxNativeZoom, attribution: b.attribution, className: b.className || '' }).addTo(map);
+    baseLayer.bringToBack();
     styleAll();
   }
-  if (!key) document.getElementById('keywarn').hidden = false;
 
   function bStyle(f) {
     const p = f.properties, c = cls(cOf(p));
@@ -338,7 +329,7 @@ th { color: var(--muted); font-weight: 600; }
   const baseBox = document.getElementById('base');
   for (const b of BASES) {
     const el = document.createElement('button');
-    el.className = 'chip'; el.dataset.id = b.id; el.textContent = b.label; el.disabled = !key;
+    el.className = 'chip'; el.dataset.id = b.id; el.textContent = b.label;
     el.onclick = () => setBase(b.id);
     baseBox.append(el);
   }
@@ -434,10 +425,10 @@ th { color: var(--muted); font-weight: 600; }
   }
 
   document.getElementById('src').innerHTML =
-    `건축물: ${D.source}<br>행정동 경계: <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (ver20261001)<br>배경지도: 브이월드 WMTS`;
+    `건축물: ${D.source}<br>행정동 경계: <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (ver20261001)<br>배경지도: OpenStreetMap · Esri World Imagery (인증키 불필요)`;
 
   setMode(state.mode);
-  setBase('white');
+  setBase('light');
 })();
 </script>
 </body>
