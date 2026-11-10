@@ -24,6 +24,7 @@
   /* 건축물 용도 범주형 팔레트(고정 순서 7색, 검증 통과) */
   --u1: #2a78d6; --u2: #eb6834; --u3: #1baf7a; --u4: #eda100; --u5: #e87ba4; --u6: #008300; --u7: #6250d6;
   --uetc: #5f5e5a;
+  --newer: #cfcec7;
   --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.08);
 }
 @media (prefers-color-scheme: dark) {
@@ -68,7 +69,11 @@ h2 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 0 8px; le
 .h2row h2 { margin: 0 0 8px; }
 .links button { border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 0 0 0 8px; }
 .links button:hover { text-decoration: underline; }
-.tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--border); margin: 14px -20px 0; padding: 0 20px; }
+.lg .sw.dashed { background: transparent !important; box-shadow: none; border: 1.5px dashed var(--unknown); }
+.hero { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
+.hero b { font-size: 22px; font-weight: 650; color: var(--ink); margin-right: 1px; }
+.hero span { display: block; font-size: 12px; color: var(--muted); }
+.tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; border-bottom: 1px solid var(--border); margin: 14px -20px 0; padding: 0 20px; }
 .tab { border: 0; background: none; font: inherit; font-size: 14px; color: var(--ink-2); padding: 9px 0 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab:hover { color: var(--ink); }
 .tab[aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
@@ -128,6 +133,7 @@ th { color: var(--muted); font-weight: 600; }
       <div class="tabs" role="tablist" aria-label="지도 주제">
         <button class="tab" role="tab" id="tab-year" data-mode="year" aria-selected="true">사용승인연도</button>
         <button class="tab" role="tab" id="tab-use" data-mode="use" aria-selected="false">건축물 용도</button>
+        <button class="tab" role="tab" id="tab-old" data-mode="old" aria-selected="false">30년 이상 노후</button>
       </div>
     </header>
 
@@ -211,12 +217,29 @@ th { color: var(--muted); font-weight: 600; }
     },
   };
   for (const m of Object.values(MODES)) for (const c of m.classes) if (c.codes) c.test = (p) => c.codes.includes(p.u);
-  // 각 건물의 구간을 미리 계산
-  for (const f of F) { const p = f.properties; p.cy = MODES.year.classes.find((c) => c.test(p)).id; p.cu = MODES.use.classes.find((c) => c.test(p)).id; }
-  const clsKey = { year: 'cy', use: 'cu' };
-  const cls = (id) => MODES.year.classes.concat(MODES.use.classes).find((c) => c.id === id);
 
-  const state = { mode: location.hash === '#use' ? 'use' : 'year', dong: null, off: { year: new Set(), use: new Set() } };
+  // 30년 이상 노후 건물 × 용도: 올해 기준 사용승인 후 30년 이상(승인연도 ≤ CUT)만 용도 색, 나머지는 흐리게
+  const REF = new Date().getFullYear(), CUT = REF - 30;
+  const isOld = (p) => !!p.y && p.y <= CUT;
+  MODES.old = {
+    title: `30년 이상 건물의 용도`, chartTitle: '용도별 30년 이상 건물 수 · 노후 비율',
+    note: `${REF}년 기준 사용승인 후 30년 이상(${CUT}년 이전 승인)인 건물만 용도별로 색칠하고, 30년 미만 건물은 회색으로 흐리게 표시합니다. 노후 비율은 승인연도가 있는 건물 중 30년 이상인 건물의 비율입니다.`,
+    classes: [
+      ...MODES.use.classes.map((c) => ({ ...c, id: 'o' + c.id, base: c.id, test: (p) => isOld(p) && c.test(p) })),
+      { id: 'onew', label: `30년 미만 (${CUT + 1}년 이후)`, v: '--newer', muted: true, test: (p) => !!p.y },
+      { id: 'onull', label: '승인연도 정보 없음', v: '--unknown', dashed: true, test: () => true },
+    ],
+  };
+  MODES.old.classes.find((c) => c.id === 'oun').label = '용도 정보 없음 (30년 이상)';
+
+  // 각 건물의 구간을 미리 계산
+  const clsKey = { year: 'cy', use: 'cu', old: 'co' };
+  for (const f of F) for (const [m, k] of Object.entries(clsKey)) f.properties[k] = MODES[m].classes.find((c) => c.test(f.properties)).id;
+  const ALL = Object.values(MODES).flatMap((m) => m.classes);
+  const cls = (id) => ALL.find((c) => c.id === id);
+
+  const hashMode = location.hash.slice(1);
+  const state = { mode: MODES[hashMode] ? hashMode : 'year', dong: null, off: { year: new Set(), use: new Set(), old: new Set() } };
   const cur = () => MODES[state.mode];
   const cOf = (p) => p[clsKey[state.mode]];
 
@@ -250,6 +273,8 @@ th { color: var(--muted); font-weight: 600; }
     const visible = !state.off[state.mode].has(c.id) && (!state.dong || state.dong === p.d);
     if (!visible) return { fillOpacity: 0, opacity: 0, weight: 0 };
     if (c.hollow) return { fillColor: css(c.v), fillOpacity: 0.08, color: dark() ? '#d9d8d2' : css(c.v), weight: 1, opacity: 0.9 };
+    if (c.dashed) return { fillOpacity: 0, color: dark() ? '#bdbcb5' : css(c.v), weight: 0.8, opacity: 0.8, dashArray: '2 2' };
+    if (c.muted) return { fillColor: dark() ? '#9a9993' : css(c.v), fillOpacity: dark() ? 0.35 : 0.55, color: dark() ? 'rgba(0,0,0,.4)' : '#ffffff', weight: 0.4, opacity: 1 };
     return { fillColor: css(c.v), fillOpacity: c.v === '--unknown' ? 0.7 : 0.9, color: dark() ? 'rgba(0,0,0,.6)' : '#ffffff', weight: 0.6, opacity: 1 };
   }
   const bLayer = L.geoJSON(D.buildings, {
@@ -261,6 +286,7 @@ th { color: var(--muted); font-weight: 600; }
         const rows = [
           ['사용승인일', fmtDay(p.day)],
           ['승인연도 구간', cls(p.cy).label],
+          p.y ? ['승인 후 경과', `${REF - p.y}년${isOld(p) ? ' (30년 이상)' : ''}`] : null,
           ['주용도', USE[p.u] || '정보 없음'],
           ['용도 분류', cls(p.cu).label],
           ['층수', p.f || p.b ? `지상 ${p.f}층${p.b ? ` · 지하 ${p.b}층` : ''}` : '정보 없음'],
@@ -291,7 +317,7 @@ th { color: var(--muted); font-weight: 600; }
     state.mode = m;
     tabs.forEach((t) => t.setAttribute('aria-selected', String(t.dataset.mode === m)));
     document.querySelector('[role=tabpanel]').setAttribute('aria-labelledby', 'tab-' + m);
-    try { history.replaceState(null, '', location.pathname + location.search + (m === 'use' ? '#use' : '')); } catch (e) {}
+    try { history.replaceState(null, '', location.pathname + location.search + (m === 'year' ? '' : '#' + m)); } catch (e) {}
     buildLegend(); drawTable(); render();
   }
 
@@ -317,7 +343,7 @@ th { color: var(--muted); font-weight: 600; }
     for (const c of cur().classes) {
       const b = document.createElement('button');
       b.className = 'lg'; b.dataset.c = c.id; b.setAttribute('aria-pressed', String(!state.off[state.mode].has(c.id)));
-      b.innerHTML = `<span class="sw${c.hollow ? ' hollow' : ''}" style="background:var(${c.v})"></span><span>${c.label}</span><span class="n"></span>`;
+      b.innerHTML = `<span class="sw${c.hollow ? ' hollow' : ''}${c.dashed ? ' dashed' : ''}" style="background:var(${c.v})"></span><span>${c.label}</span><span class="n"></span>`;
       b.onclick = () => { const off = state.off[state.mode]; off.has(c.id) ? off.delete(c.id) : off.add(c.id); render(); };
       legend.append(b);
     }
@@ -391,11 +417,35 @@ th { color: var(--muted); font-weight: 600; }
     });
   }
 
+  // 노후 × 용도: 가로 막대 = 30년 이상 건물 수, 오른쪽에 노후 비율(승인연도 있는 건물 중)
+  function drawOld(feats) {
+    const rows = MODES.use.classes.map((c) => {
+      const all = feats.filter((f) => f.properties.cu === c.id), known = all.filter((f) => f.properties.y);
+      return { c, all: all.length, known: known.length, old: known.filter((f) => isOld(f.properties)).length };
+    });
+    const max = Math.max(...rows.map((r) => r.old), 1);
+    const known = feats.filter((f) => f.properties.y).length, old = feats.filter((f) => isOld(f.properties)).length;
+    const rate = (a, b) => (b ? ((a / b) * 100).toFixed(1) + '%' : '—');
+    clearChart();
+    const box = document.createElement('div'); box.className = 'hbars';
+    box.innerHTML = `<p class="hero"><b>${nf(old)}</b>동 <span>승인연도 있는 건물 ${nf(known)}동 중 ${rate(old, known)}</span></p>` +
+      rows.map(({ c, old: n, known: k }) => `<div class="hbar${state.off.old.has('o' + c.id) ? ' off' : ''}" data-c="${c.id}">
+      <span class="lab" title="${c.label}">${c.label}</span>
+      <span class="track"><span class="bar" style="width:${(n / max) * 100}%;${c.hollow ? 'background:transparent;box-shadow:inset 0 0 0 1.5px var(--unknown)' : `background:var(${c.v})`}"></span></span>
+      <span class="val">${nf(n)} <small>${rate(n, k)}</small></span></div>`).join('');
+    chart.prepend(box);
+    box.querySelectorAll('.hbar').forEach((el) => {
+      const r = rows.find((x) => x.c.id === el.dataset.c);
+      el.addEventListener('mouseenter', () => showTip(el.querySelector('.track'), `<b>${r.c.label}</b> 전체 ${nf(r.all)}동<br>승인연도 있음 ${nf(r.known)}동 중 30년 이상 ${nf(r.old)}동 (${rate(r.old, r.known)})`));
+      el.addEventListener('mouseleave', () => (ctip.style.opacity = 0));
+    });
+  }
+
   // ── 표
   function drawTable() {
     const k = clsKey[state.mode];
     const cnt = (d, c) => F.filter((f) => (!d || f.properties.d === d) && (c === undefined || f.properties[k] === c)).length;
-    let h = `<table><thead><tr><th>${state.mode === 'use' ? '용도' : '구간'}</th>` + DONGS.map((d) => `<th>${d.replace('성수', '')}</th>`).join('') + '<th>합계</th></tr></thead><tbody>';
+    let h = `<table><thead><tr><th>${state.mode === 'year' ? '구간' : '용도'}</th>` + DONGS.map((d) => `<th>${d.replace('성수', '')}</th>`).join('') + '<th>합계</th></tr></thead><tbody>';
     for (const c of cur().classes) h += `<tr><td>${c.label}</td>` + DONGS.map((d) => `<td>${nf(cnt(d, c.id))}</td>`).join('') + `<td>${nf(cnt(null, c.id))}</td></tr>`;
     h += '<tr><th>합계</th>' + DONGS.map((d) => `<th>${nf(cnt(d))}</th>`).join('') + `<th>${nf(F.length)}</th></tr></tbody></table>`;
     document.getElementById('table').innerHTML = h;
@@ -407,6 +457,7 @@ th { color: var(--muted); font-weight: 600; }
   const CAVEAT = {
     year: `원자료의 사용승인일은 ${Math.min(...ys)}–${Math.max(...ys)}년 범위이며, 전체의 ${pct(unknownY)}(${nf(unknownY)}동)는 사용승인일이 비어 있습니다. 최근 준공 건물이 원자료에 반영되지 않았을 수 있습니다.`,
     use: `전체의 ${pct(unknownU)}(${nf(unknownU)}동)는 주용도 정보가 비어 있어 외곽선만 표시합니다. 용도는 건축물대장 기준이라 현재 실제 쓰임(예: 공장을 고친 카페)과 다를 수 있습니다.`,
+    old: `사용승인일이 없는 ${nf(unknownY)}동은 노후 여부를 알 수 없어 점선으로만 표시합니다. 원자료에 ${Math.max(...ys) + 1}년 이후 승인 건물이 없어, 최근 신축이 빠진 만큼 노후 비율이 실제보다 높게 나올 수 있습니다.`,
   };
 
   function render() {
@@ -420,7 +471,7 @@ th { color: var(--muted); font-weight: 600; }
     document.getElementById('chartTitle').textContent = cur().chartTitle;
     document.getElementById('note').textContent = cur().note;
     document.getElementById('caveat').textContent = CAVEAT[state.mode];
-    state.mode === 'year' ? drawDecades(feats) : drawUses(feats);
+    ({ year: drawDecades, use: drawUses, old: drawOld })[state.mode](feats);
     styleAll();
   }
 
