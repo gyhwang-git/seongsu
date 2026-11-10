@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>성수동 건축물 승인연도</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --hover: rgba(11,11,11,0.05);
+  --accent: #2a78d6;
+  /* 승인연도 순서형 램프(파랑 250→650, 검증 통과): 최근 → 오래됨 */
+  --c0: #86b6ef; --c1: #5598e7; --c2: #2a78d6; --c3: #1c5cab; --c4: #104281;
+  --unknown: #85847e;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.06);
+    --accent: #3987e5;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --hover: rgba(255,255,255,0.06);
+  --accent: #3987e5;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.4);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--page); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+.app { display: grid; grid-template-columns: 360px 1fr; height: 100vh; height: 100dvh; }
+#map { height: 100%; background: var(--page); }
+.panel { background: var(--surface); border-right: 1px solid var(--border); overflow-y: auto; padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 20px; }
+h1 { font-size: 20px; line-height: 1.3; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+.sub { color: var(--ink-2); margin: 4px 0 0; font-size: 13px; }
+h2 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0 0 8px; letter-spacing: .02em; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip:hover { background: var(--hover); }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.legend { display: flex; flex-direction: column; gap: 2px; }
+.lg { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--ink); font: inherit; text-align: left; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+.lg:hover { background: var(--hover); }
+.lg .sw { width: 16px; height: 16px; border-radius: 4px; }
+.lg .n { color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: 13px; }
+.lg[aria-pressed="false"] { opacity: .4; }
+.lg[aria-pressed="false"] .sw { background: transparent !important; box-shadow: inset 0 0 0 1.5px var(--muted); }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 8px; padding: 6px 9px; font-size: 12px; white-space: nowrap; opacity: 0; transition: opacity .1s; z-index: 5; }
+.tip b { font-weight: 600; }
+details { border-top: 1px solid var(--border); padding-top: 14px; }
+summary { cursor: pointer; font-size: 13px; color: var(--ink-2); }
+table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12px; font-variant-numeric: tabular-nums; }
+th, td { padding: 4px 4px; text-align: right; border-bottom: 1px solid var(--grid); }
+th:first-child, td:first-child { text-align: left; }
+th { color: var(--muted); font-weight: 600; }
+.base { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.base .chip { border-radius: 6px; padding: 5px 0; text-align: center; }
+.note { font-size: 12px; color: var(--ink-2); margin: 0; }
+.note + .note { margin-top: 6px; }
+.warn { border: 1px solid var(--border); background: var(--hover); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--ink-2); }
+.warn code { font-size: 12px; }
+.src { font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: auto; }
+.src a { color: inherit; }
+/* 지도 위 요소 */
+.leaflet-container { font: inherit; }
+.leaflet-tooltip.btip { background: var(--surface); color: var(--ink); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 8px; padding: 8px 10px; font-size: 12px; line-height: 1.5; }
+.leaflet-tooltip.btip::before { display: none; }
+.btip .t { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.btip .r { display: flex; gap: 10px; justify-content: space-between; }
+.btip .r span:first-child { color: var(--muted); }
+.leaflet-tooltip.dlabel { background: rgba(255,255,255,.85); border: 0; box-shadow: none; color: #0b0b0b; font-weight: 650; font-size: 12px; padding: 1px 6px; border-radius: 4px; }
+.leaflet-tooltip.dlabel::before { display: none; }
+.leaflet-control-attribution { font-size: 10.5px; }
+@media (max-width: 760px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 58vh auto; height: auto; }
+  .panel { min-width: 0; }
+  #map { height: 58vh; order: -1; }
+  .panel { border-right: 0; border-top: 1px solid var(--border); overflow: visible; padding: 18px 16px 24px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="panel">
+    <header>
+      <h1>성수동 건축물 사용승인연도</h1>
+      <p class="sub" id="sub">성수1가1동 · 성수1가2동 · 성수2가1동 · 성수2가3동</p>
+    </header>
+
+    <div id="keywarn" class="warn" hidden>
+      브이월드 배경지도 키가 없습니다. 로컬에서는 <code>node scripts/make_key_js.mjs</code>로 <code>vworld_key.js</code>를 만들고, 그 밖의 환경에서는 주소 끝에 <code>?key=인증키</code>를 붙여 여세요. 건물 지도는 배경 없이 표시됩니다.
+    </div>
+
+    <section>
+      <h2>행정동</h2>
+      <div class="chips" id="dongs" role="group" aria-label="행정동 선택"></div>
+    </section>
+
+    <section>
+      <h2>사용승인연도</h2>
+      <div class="legend" id="legend"></div>
+      <p class="hint">항목을 눌러 지도에서 켜고 끌 수 있습니다.</p>
+    </section>
+
+    <section>
+      <h2>10년 단위 건물 수</h2>
+      <div class="chart" id="chart"><div class="tip" id="ctip"></div></div>
+    </section>
+
+    <details>
+      <summary>행정동별 표로 보기</summary>
+      <div id="table"></div>
+    </details>
+
+    <section>
+      <h2>브이월드 배경지도</h2>
+      <div class="base" id="base" role="group" aria-label="배경지도"></div>
+    </section>
+
+    <section>
+      <p class="note">사용승인일은 건축물대장의 사용승인일(<code>useapr_day</code>) 기준이며, 건물 색은 그 연도의 구간입니다.</p>
+      <p class="note" id="caveat"></p>
+    </section>
+
+    <footer class="src" id="src"></footer>
+  </aside>
+  <div id="map" aria-label="성수동 건축물 지도"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="data/seongsu_data.js"></script>
+<!-- 로컬 전용 키 파일(커밋 안 함). 없으면 ?key= 로 받는다 -->
+<script src="vworld_key.js"></script>
+<script>
+(() => {
+  const D = window.SEONGSU;
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  // ── 키: vworld_key.js → ?key= → 이전에 쓴 키(localStorage)
+  let key = window.VWORLD_KEY || new URLSearchParams(location.search).get('key');
+  try { if (key) localStorage.setItem('vworldKey', key); else key = localStorage.getItem('vworldKey'); } catch (e) {}
+
+  // ── 연도 구간
+  const CLASSES = [
+    { id: 4, label: '1969년 이전', test: (y) => y <= 1969, v: '--c4' },
+    { id: 3, label: '1970–1979년', test: (y) => y >= 1970 && y <= 1979, v: '--c3' },
+    { id: 2, label: '1980–1989년', test: (y) => y >= 1980 && y <= 1989, v: '--c2' },
+    { id: 1, label: '1990–1999년', test: (y) => y >= 1990 && y <= 1999, v: '--c1' },
+    { id: 0, label: '2000년 이후', test: (y) => y >= 2000, v: '--c0' },
+    { id: -1, label: '승인일 정보 없음', test: () => false, v: '--unknown' },
+  ];
+  const classOf = (y) => (y ? CLASSES.find((c) => c.test(y)).id : -1);
+  const color = (id) => css(CLASSES.find((c) => c.id === id).v);
+  const DONGS = ['성수1가1동', '성수1가2동', '성수2가1동', '성수2가3동'];
+  const USE = { '01000': '단독주택', '02000': '공동주택', '03000': '제1종 근린생활시설', '04000': '제2종 근린생활시설', '05000': '문화 및 집회시설', '06000': '종교시설', '07000': '판매시설', '08000': '운수시설', '09000': '의료시설', '10000': '교육연구시설', '11000': '노유자시설', '12000': '수련시설', '13000': '운동시설', '14000': '업무시설', '15000': '숙박시설', '16000': '위락시설', '17000': '공장', '18000': '창고시설', '19000': '위험물 저장·처리시설', '20000': '자동차 관련 시설', '21000': '동물·식물 관련 시설', '22000': '자원순환 관련 시설', '23000': '교정시설', '24000': '국방·군사시설', '25000': '방송통신시설', '26000': '발전시설', '27000': '묘지 관련 시설', '28000': '관광 휴게시설', '29000': '장례시설' };
+  const fmtDay = (d) => (d && d.length === 8 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)}` : d || '—');
+  const nf = (n) => n.toLocaleString('ko-KR');
+
+  for (const f of D.buildings.features) f.properties.c = classOf(f.properties.y);
+  const state = { dong: null, off: new Set() };
+
+  // ── 지도
+  const map = L.map('map', { preferCanvas: true, zoomControl: true, minZoom: 12, maxZoom: 19, zoomSnap: 0.25 });
+  const BASES = [
+    { id: 'white', label: '흰지도', ext: 'png' },
+    { id: 'Base', label: '기본', ext: 'png' },
+    { id: 'midnight', label: '야간', ext: 'png' },
+    { id: 'Satellite', label: '영상', ext: 'jpeg' },
+  ];
+  const attrib = '배경지도 © <a href="https://www.vworld.kr" target="_blank" rel="noopener">브이월드</a>';
+  let baseLayer = null, labelLayer = null, baseId = 'white';
+  function setBase(id) {
+    baseId = id;
+    if (baseLayer) map.removeLayer(baseLayer);
+    if (labelLayer) map.removeLayer(labelLayer);
+    if (!key) return;
+    const b = BASES.find((x) => x.id === id);
+    baseLayer = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${key}/${b.id}/{z}/{y}/{x}.${b.ext}`, { maxZoom: 19, maxNativeZoom: 19, attribution: attrib }).addTo(map);
+    baseLayer.bringToBack();
+    if (id === 'Satellite') labelLayer = L.tileLayer(`https://api.vworld.kr/req/wmts/1.0.0/${key}/Hybrid/{z}/{y}/{x}.png`, { maxZoom: 19 }).addTo(map);
+    document.querySelectorAll('#base .chip').forEach((el) => el.setAttribute('aria-pressed', String(el.dataset.id === id)));
+    styleAll();
+  }
+  if (!key) document.getElementById('keywarn').hidden = false;
+
+  const dark = () => baseId === 'midnight' || baseId === 'Satellite';
+  function bStyle(f) {
+    const p = f.properties, visible = !state.off.has(p.c) && (!state.dong || state.dong === p.d);
+    return {
+      fillColor: color(p.c), fillOpacity: visible ? (p.c === -1 ? 0.7 : 0.9) : 0,
+      color: dark() ? 'rgba(0,0,0,.6)' : '#ffffff', weight: visible ? 0.6 : 0, opacity: visible ? 1 : 0,
+    };
+  }
+  const bLayer = L.geoJSON(D.buildings, {
+    style: bStyle,
+    onEachFeature(f, layer) {
+      layer.bindTooltip(() => {
+        const p = f.properties;
+        const name = p.n || (USE[p.u] ?? '건물');
+        const rows = [
+          ['사용승인일', fmtDay(p.day)],
+          ['승인연도 구간', CLASSES.find((c) => c.id === p.c).label],
+          ['주용도', USE[p.u] || '정보 없음'],
+          ['층수', p.f || p.b ? `지상 ${p.f}층${p.b ? ` · 지하 ${p.b}층` : ''}` : '정보 없음'],
+          p.a ? ['연면적', nf(p.a) + '㎡'] : null,
+          ['행정동', p.d],
+        ].filter(Boolean);
+        return `<div class="t">${name.replace(/</g, '&lt;')}</div>` + rows.map(([k, v]) => `<div class="r"><span>${k}</span><span>${v}</span></div>`).join('');
+      }, { className: 'btip', sticky: true, direction: 'top', offset: [0, -8] });
+      layer.on('mouseover', () => { if (bStyle(f).fillOpacity) layer.setStyle({ weight: 2.5, color: css('--ink') }); });
+      layer.on('mouseout', () => layer.setStyle(bStyle(f)));
+    },
+  }).addTo(map);
+
+  const dLayer = L.geoJSON(D.dong, {
+    interactive: false,
+    style: (f) => ({ fill: false, color: dark() ? '#ffffff' : '#0b0b0b', weight: state.dong === f.properties.adm_nm ? 3 : 1.6, dashArray: '5 4', opacity: state.dong && state.dong !== f.properties.adm_nm ? 0.35 : 0.85 }),
+    onEachFeature(f, layer) { layer.bindTooltip(f.properties.adm_nm, { permanent: true, direction: 'center', className: 'dlabel' }); },
+  }).addTo(map);
+  // 행정동 경계는 한강까지 포함하므로, 처음 화면과 동 선택 시에는 건물 범위에 맞춘다
+  const bldgBounds = (d) => L.latLngBounds(bLayer.getLayers().filter((l) => !d || l.feature.properties.d === d).map((l) => l.getBounds()));
+  map.fitBounds(bldgBounds(), { padding: [16, 16] });
+
+  function styleAll() { bLayer.setStyle(bStyle); dLayer.setStyle((f) => dLayer.options.style(f)); }
+
+  // ── 패널: 행정동 칩
+  const dongBox = document.getElementById('dongs');
+  for (const d of [null, ...DONGS]) {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.textContent = d || '전체'; b.setAttribute('aria-pressed', String(d === null));
+    b.onclick = () => {
+      state.dong = d;
+      dongBox.querySelectorAll('.chip').forEach((el) => el.setAttribute('aria-pressed', String(el === b)));
+      map.fitBounds(bldgBounds(d), { padding: [24, 24] });
+      render();
+    };
+    dongBox.append(b);
+  }
+
+  // ── 범례(필터 겸용)
+  const legend = document.getElementById('legend');
+  for (const c of CLASSES) {
+    const b = document.createElement('button');
+    b.className = 'lg'; b.dataset.c = c.id; b.setAttribute('aria-pressed', 'true');
+    b.innerHTML = `<span class="sw" style="background:var(${c.v})"></span><span>${c.label}</span><span class="n"></span>`;
+    b.onclick = () => { state.off.has(c.id) ? state.off.delete(c.id) : state.off.add(c.id); b.setAttribute('aria-pressed', String(!state.off.has(c.id))); render(); };
+    legend.append(b);
+  }
+
+  // ── 배경지도 선택
+  const baseBox = document.getElementById('base');
+  for (const b of BASES) {
+    const el = document.createElement('button');
+    el.className = 'chip'; el.dataset.id = b.id; el.textContent = b.label; el.disabled = !key;
+    el.onclick = () => setBase(b.id);
+    baseBox.append(el);
+  }
+
+  // ── 10년 단위 막대(단일 계열, 막대 색 = 해당 연대의 구간 색)
+  const chart = document.getElementById('chart'), ctip = document.getElementById('ctip');
+  const ys = D.buildings.features.map((f) => f.properties.y).filter(Boolean);
+  const dec0 = Math.floor(Math.min(...ys) / 10) * 10, dec1 = Math.floor(Math.max(...ys) / 10) * 10;
+  const DECS = []; for (let d = dec0; d <= dec1; d += 10) DECS.push(d);
+  function drawChart(feats) {
+    const counts = DECS.map((d) => feats.filter((f) => f.properties.y && Math.floor(f.properties.y / 10) * 10 === d).length);
+    const W = 320, H = 150, padL = 34, padB = 20, padT = 8, iw = W - padL, ih = H - padB - padT;
+    const max = Math.max(...counts, 1), step = niceStep(max / 3), top = Math.ceil(max / step) * step;
+    const bw = iw / DECS.length, gap = 2;
+    let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="10년 단위 사용승인 건물 수">`;
+    for (let v = 0; v <= top; v += step) { const y = padT + ih - (v / top) * ih; s += `<line x1="${padL}" x2="${W}" y1="${y}" y2="${y}" stroke="var(${v ? '--grid' : '--axis'})" stroke-width="1"/><text x="${padL - 6}" y="${y + 3.5}" text-anchor="end">${nf(v)}</text>`; }
+    DECS.forEach((d, i) => {
+      const h = (counts[i] / top) * ih, x = padL + i * bw + gap / 2, y = padT + ih - h, w = bw - gap, r = Math.min(4, w / 2, h);
+      const c = classOf(d + 5), on = !state.off.has(c);
+      if (h > 0) s += `<path d="M${x},${padT + ih} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${padT + ih} Z" fill="var(${CLASSES.find((k) => k.id === c).v})" opacity="${on ? 1 : 0.25}"/>`;
+      if (i % 2 === 0 || DECS.length <= 6) s += `<text x="${x + w / 2}" y="${H - 5}" text-anchor="middle">${d}</text>`;
+      s += `<rect class="hit" data-i="${i}" x="${padL + i * bw}" y="${padT}" width="${bw}" height="${ih}" fill="transparent"/>`;
+    });
+    s += '</svg>';
+    chart.querySelector('svg')?.remove();
+    chart.insertAdjacentHTML('afterbegin', s);
+    chart.querySelectorAll('.hit').forEach((r) => {
+      r.addEventListener('mouseenter', () => {
+        const i = +r.dataset.i;
+        ctip.innerHTML = `<b>${DECS[i]}년대</b> · ${nf(counts[i])}동`;
+        const box = chart.getBoundingClientRect(), rb = r.getBoundingClientRect();
+        ctip.style.left = Math.min(box.width - 110, Math.max(0, rb.left - box.left + rb.width / 2 - 50)) + 'px';
+        ctip.style.top = '-6px'; ctip.style.opacity = 1;
+      });
+      r.addEventListener('mouseleave', () => (ctip.style.opacity = 0));
+    });
+  }
+  function niceStep(x) { const p = 10 ** Math.floor(Math.log10(x || 1)); const m = x / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+
+  // ── 표
+  function drawTable() {
+    const all = D.buildings.features;
+    const cnt = (d, c) => all.filter((f) => (!d || f.properties.d === d) && (c === undefined || f.properties.c === c)).length;
+    let h = '<table><thead><tr><th>구간</th>' + DONGS.map((d) => `<th>${d.replace('성수', '')}</th>`).join('') + '<th>합계</th></tr></thead><tbody>';
+    for (const c of CLASSES) h += `<tr><td>${c.label}</td>` + DONGS.map((d) => `<td>${nf(cnt(d, c.id))}</td>`).join('') + `<td>${nf(cnt(null, c.id))}</td></tr>`;
+    h += '<tr><th>합계</th>' + DONGS.map((d) => `<th>${nf(cnt(d))}</th>`).join('') + `<th>${nf(all.length)}</th></tr></tbody></table>`;
+    document.getElementById('table').innerHTML = h;
+  }
+
+  function render() {
+    const feats = D.buildings.features.filter((f) => !state.dong || f.properties.d === state.dong);
+    legend.querySelectorAll('.lg').forEach((b) => (b.querySelector('.n').textContent = nf(feats.filter((f) => f.properties.c === +b.dataset.c).length)));
+    document.getElementById('sub').textContent = `${state.dong || '성수1가1동 · 성수1가2동 · 성수2가1동 · 성수2가3동'} · 건물 ${nf(feats.length)}동`;
+    drawChart(feats);
+    styleAll();
+  }
+
+  // ── 출처·주의
+  const yrs = D.buildings.features.map((f) => f.properties.y).filter(Boolean);
+  const unknown = D.buildings.features.length - yrs.length;
+  document.getElementById('caveat').textContent =
+    `원자료의 사용승인일은 ${Math.min(...yrs)}–${Math.max(...yrs)}년 범위이며, 전체의 ${(unknown / D.buildings.features.length * 100).toFixed(1)}%(${nf(unknown)}동)는 사용승인일이 비어 있습니다. 최근 준공 건물이 원자료에 반영되지 않았을 수 있습니다.`;
+  document.getElementById('src').innerHTML =
+    `건축물: ${D.source}<br>행정동 경계: <a href="https://github.com/vuski/admdongkor" target="_blank" rel="noopener">vuski/admdongkor</a> (ver20261001)<br>배경지도: 브이월드 WMTS`;
+
+  drawTable();
+  render();
+  setBase('white');
+})();
+</script>
+</body>
+</html>

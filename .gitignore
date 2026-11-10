@@ -1,0 +1,7 @@
+# 비밀값 (공유·커밋 금지)
+.env
+*.env
+vworld_key.js
+
+node_modules/
+.DS_Store
